@@ -1,0 +1,120 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Rose</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 900px; margin: 1.5rem auto; }
+    #chat { border: 1px solid #ddd; padding: 1rem; height: 400px; overflow-y: auto; background:#fafafa; }
+    .msg { margin: 0.25rem 0; }
+    .meta { font-size: 0.85rem; color: #666; }
+    .system { color: #111111; font-style: italic; }
+    #users { margin-top: 0.75rem; font-size: 0.9rem; color: #333; }
+    #controls { margin-top: 1rem; display:flex; gap:0.5rem; }
+    input[type="text"]{ padding:0.5rem; flex:1; }
+    button{ padding:0.5rem 0.8rem; }
+  </style>
+</head>
+<body>
+  <h2> Chat with rose</h2>
+
+  <label>
+    Username:
+    <input id="username" type="text" placeholder="Enter name" />
+    <button id="joinBtn">Join Chat</button>
+  </label>
+
+  <div id="users"><strong>Connected users:</strong> <span id="userList">—</span></div>
+
+  <div id="chat" aria-live="polite"></div>
+
+  <div id="controls">
+    <input id="msgInput" type="text" placeholder="Type a message..." disabled />
+    <button id="sendBtn" disabled>Send</button>
+  </div>
+
+  <!-- Socket.IO client script (served by server) -->
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+
+    const joinBtn = document.getElementById('joinBtn');
+    const usernameInput = document.getElementById('username');
+    const chatEl = document.getElementById('chat');
+    const msgInput = document.getElementById('msgInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const userListEl = document.getElementById('userList');
+
+    function appendSystem(text){
+      const d = document.createElement('div');
+      d.className = 'msg system';
+      d.textContent = text;
+      chatEl.appendChild(d);
+      chatEl.scrollTop = chatEl.scrollHeight;
+    }
+
+    function appendMessage({from, message, ts}){
+      const d = document.createElement('div');
+      d.className = 'msg';
+      const time = new Date(ts).toLocaleTimeString();
+      d.innerHTML = `<div class="meta">${from} <small>(${time})</small></div><div>${escapeHtml(message)}</div>`;
+      chatEl.appendChild(d);
+      chatEl.scrollTop = chatEl.scrollHeight;
+    }
+
+    function escapeHtml(str){
+      return str.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[m]));
+    }
+
+    joinBtn.addEventListener('click', () => {
+      const name = usernameInput.value.trim() || 'Anonymous';
+      socket.emit('join', name);
+      usernameInput.disabled = true;
+      joinBtn.disabled = true;
+      msgInput.disabled = false;
+      sendBtn.disabled = false;
+      appendSystem('You joined as: ' + name);
+    });
+
+    sendBtn.addEventListener('click', sendMessage);
+    msgInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') sendMessage();
+    });
+
+    function sendMessage(){
+      const text = msgInput.value.trim();
+      if (!text) return;
+      socket.emit('message', { message: text });
+      msgInput.value = '';
+    }
+
+    // Incoming message - show in chat
+    socket.on('message', (data) => {
+      appendMessage({ from: data.from, message: data.message, ts: data.ts });
+    });
+
+    // Notification (join/leave)
+    socket.on('notification', (n) => {
+      appendSystem(n.message);
+      if (n.users) {
+        userListEl.textContent = n.users.join(', ') || '—';
+      }
+    });
+
+    // When we get joined event (our ack)
+    socket.on('joined', (payload) => {
+      appendSystem('Welcome! You are connected (id: ' + payload.yourId + ').');
+      userListEl.textContent = payload.users.join(', ') || '—';
+    });
+
+    socket.on('usersList', (list) => {
+      userListEl.textContent = list.join(', ') || '—';
+    });
+
+    // Show disconnect system message
+    socket.on('disconnect', (reason) => {
+      appendSystem('You were disconnected. Reason: ' + reason);
+    });
+  </script>
+</body>
+</html>
